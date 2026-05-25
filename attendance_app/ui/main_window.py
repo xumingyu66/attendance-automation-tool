@@ -8,8 +8,10 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QApplication,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -20,9 +22,9 @@ from PySide6.QtWidgets import (
     QComboBox,
     QProgressBar,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -54,21 +56,326 @@ class MainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(0)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QHBoxLayout(central)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_attendance_tab(), "考勤处理")
-        tabs.addTab(self._build_import_tab(), "员工信息导入")
-        tabs.addTab(self._build_employee_tab(), "员工数据")
-        tabs.currentChanged.connect(self._on_tab_changed)
-        layout.addWidget(tabs)
+        # Stacked content pages (created first, referenced by sidebar)
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_attendance_tab())  # 0
+        self._stack.addWidget(self._build_import_tab())       # 1
+        self._stack.addWidget(self._build_employee_tab())     # 2
 
-    def _on_tab_changed(self, index: int) -> None:
-        """Auto-load employee data when switching to the employee tab."""
-        if index == 2:
+        # Left sidebar
+        sidebar = self._build_sidebar()
+        main_layout.addWidget(sidebar)
+
+        # Right content area
+        right = QWidget()
+        right.setObjectName("rightArea")
+        right_layout = QVBoxLayout(right)
+        right_layout.setSpacing(0)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Header
+        header = self._build_header()
+        right_layout.addWidget(header)
+
+        # Stacked pages
+        right_layout.addWidget(self._stack, 1)
+
+        main_layout.addWidget(right, 1)
+
+        self._apply_styles()
+
+    def _on_nav_clicked(self, btn: QAbstractButton) -> None:
+        """Switch content page when a sidebar nav button is clicked."""
+        self._stack.setCurrentIndex(self._nav_btns.index(btn))
+        if self._stack.currentIndex() == 2:
             self._on_refresh_employees()
+
+    # =========================================================================
+    # Sidebar, Header, and Styles
+    # =========================================================================
+
+    def _build_sidebar(self) -> QWidget:
+        """Build the left sidebar navigation."""
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(220)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 16)
+
+        # App title area
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(20, 24, 20, 20)
+
+        icon_path = Path(__file__).parent / "app_icon.png"
+        icon_label = QLabel()
+        icon_label.setPixmap(QIcon(str(icon_path)).pixmap(28, 28))
+        icon_label.setFixedSize(28, 28)
+        title_layout.addWidget(icon_label)
+        title_layout.addSpacing(10)
+
+        title = QLabel("考勤自动化")
+        title.setObjectName("sidebarTitle")
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+        layout.addLayout(title_layout)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background-color: #E2E8F0; max-height: 1px;")
+        layout.addWidget(sep)
+        layout.addSpacing(8)
+
+        # Nav label
+        nav_label = QLabel("  功能导航")
+        nav_label.setStyleSheet("color: #94A3B8; font-size: 11px; padding: 8px 16px 4px;")
+        layout.addWidget(nav_label)
+
+        # Nav buttons
+        self._nav_btns: list[QPushButton] = []
+        nav_data = [
+            ("📊", "考勤处理"),
+            ("📥", "员工导入"),
+            ("👥", "员工数据"),
+        ]
+
+        for i, (icon, text) in enumerate(nav_data):
+            btn = QPushButton(f"  {icon}  {text}")
+            btn.setObjectName("navButton")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _checked, idx=i: self._on_nav_clicked(self._nav_btns[idx]))
+            self._nav_btns.append(btn)
+            layout.addWidget(btn)
+
+        layout.addStretch()
+
+        # Version
+        ver_label = QLabel("v1.0.0")
+        ver_label.setStyleSheet("color: #CBD5E1; font-size: 11px; padding: 8px 20px;")
+        layout.addWidget(ver_label)
+
+        # Default to first nav
+        self._nav_btns[0].setChecked(True)
+
+        return sidebar
+
+    def _build_header(self) -> QWidget:
+        """Build the top header bar."""
+        header = QWidget()
+        header.setObjectName("header")
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(32, 24, 32, 20)
+
+        title = QLabel("考勤自动化处理工具")
+        title.setObjectName("headerTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel("高效处理考勤数据，自动生成统计报表")
+        subtitle.setObjectName("headerSubtitle")
+        layout.addWidget(subtitle)
+
+        return header
+
+    def _apply_styles(self) -> None:
+        """Apply application-wide QSS stylesheet."""
+        self.setStyleSheet("""
+            * {
+                font-family: "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif;
+                font-size: 13px;
+                color: #1F2937;
+            }
+            QMainWindow, QWidget#rightArea {
+                background-color: #FFFFFF;
+            }
+            QWidget#sidebar {
+                background-color: #F8FAFC;
+                border-right: 1px solid #E2E8F0;
+            }
+            QWidget#sidebar QLabel#sidebarTitle {
+                font-size: 18px;
+                font-weight: bold;
+                color: #0F172A;
+            }
+            QPushButton#navButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 8px;
+                text-align: left;
+                padding: 10px 16px;
+                margin: 2px 12px;
+                font-size: 14px;
+                color: #475569;
+            }
+            QPushButton#navButton:hover {
+                background-color: #E2E8F0;
+                color: #0F172A;
+            }
+            QPushButton#navButton:checked {
+                background-color: #E8F5E9;
+                color: #00BFA5;
+                font-weight: bold;
+            }
+            QWidget#header {
+                background-color: #FFFFFF;
+                border-bottom: 1px solid #E2E8F0;
+            }
+            QWidget#header QLabel#headerTitle {
+                font-size: 22px;
+                font-weight: bold;
+                color: #0F172A;
+            }
+            QWidget#header QLabel#headerSubtitle {
+                font-size: 13px;
+                color: #94A3B8;
+                margin-top: 2px;
+            }
+            QGroupBox {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 12px;
+                margin-top: 20px;
+                padding: 20px 20px 16px;
+                font-size: 14px;
+                font-weight: bold;
+                color: #0F172A;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 16px;
+                padding: 0 8px;
+                background-color: #FFFFFF;
+            }
+            QPushButton#primaryBtn {
+                background-color: #00BFA5;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 28px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton#primaryBtn:hover {
+                background-color: #00A896;
+            }
+            QPushButton#primaryBtn:pressed {
+                background-color: #00897B;
+            }
+            QPushButton#primaryBtn:disabled {
+                background-color: #CBD5E1;
+                color: #94A3B8;
+            }
+            QPushButton#browseBtn {
+                background-color: #F1F5F9;
+                color: #475569;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 16px;
+                font-size: 13px;
+                font-weight: normal;
+            }
+            QPushButton#browseBtn:hover {
+                background-color: #E2E8F0;
+            }
+            QLineEdit {
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 13px;
+                color: #0F172A;
+                background-color: #F8FAFC;
+            }
+            QLineEdit:read-only {
+                background-color: #F1F5F9;
+            }
+            QLineEdit:focus {
+                border-color: #00BFA5;
+                background-color: #FFFFFF;
+            }
+            QTableWidget {
+                border: 1px solid #E2E8F0;
+                border-radius: 8px;
+                gridline-color: #F1F5F9;
+                background-color: #FFFFFF;
+                selection-background-color: #E8F5E9;
+                selection-color: #0F172A;
+            }
+            QHeaderView::section {
+                background-color: #F8FAFC;
+                color: #475569;
+                padding: 10px 12px;
+                border: none;
+                border-bottom: 2px solid #E2E8F0;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QTableWidget::item {
+                padding: 8px 12px;
+            }
+            QTableWidget::item:selected {
+                background-color: #E8F5E9;
+                color: #0F172A;
+            }
+            QComboBox {
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 13px;
+                color: #0F172A;
+                background-color: #FFFFFF;
+            }
+            QComboBox:hover {
+                border-color: #00BFA5;
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                selection-background-color: #E8F5E9;
+                selection-color: #0F172A;
+            }
+            QProgressBar {
+                border: none;
+                border-radius: 4px;
+                background-color: #E2E8F0;
+                min-height: 6px;
+                max-height: 6px;
+                text-align: center;
+                font-size: 11px;
+                color: #94A3B8;
+            }
+            QProgressBar::chunk {
+                background-color: #00BFA5;
+                border-radius: 4px;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #F1F5F9;
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #CBD5E1;
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #94A3B8;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+        """)
 
     # =========================================================================
     # Tab 1: Attendance Processing
@@ -91,6 +398,7 @@ class MainWindow(QMainWindow):
         self._xls_edit.setReadOnly(True)
         row1.addWidget(self._xls_edit, 1)
         xls_btn = QPushButton("浏览...")
+        xls_btn.setObjectName("browseBtn")
         xls_btn.clicked.connect(self._browse_xls)
         row1.addWidget(xls_btn)
         file_layout.addLayout(row1)
@@ -102,6 +410,7 @@ class MainWindow(QMainWindow):
         self._xlsx_edit.setReadOnly(True)
         row2.addWidget(self._xlsx_edit, 1)
         xlsx_btn = QPushButton("浏览...")
+        xlsx_btn.setObjectName("browseBtn")
         xlsx_btn.clicked.connect(self._browse_xlsx)
         row2.addWidget(xlsx_btn)
         file_layout.addLayout(row2)
@@ -116,6 +425,7 @@ class MainWindow(QMainWindow):
         self._out_edit.setReadOnly(True)
         out_layout.addWidget(self._out_edit, 1)
         out_btn = QPushButton("浏览...")
+        out_btn.setObjectName("browseBtn")
         out_btn.clicked.connect(self._browse_output)
         out_layout.addWidget(out_btn)
         layout.addWidget(out_group)
@@ -123,8 +433,8 @@ class MainWindow(QMainWindow):
         # Action
         btn_layout = QHBoxLayout()
         self._process_btn = QPushButton("开始考勤处理")
+        self._process_btn.setObjectName("primaryBtn")
         self._process_btn.setMinimumHeight(40)
-        self._process_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; }")
         self._process_btn.clicked.connect(self._on_process)
         btn_layout.addWidget(self._process_btn, 1)
         layout.addLayout(btn_layout)
@@ -156,6 +466,7 @@ class MainWindow(QMainWindow):
         self._import_xls_edit.setReadOnly(True)
         file_layout.addWidget(self._import_xls_edit, 1)
         import_xls_btn = QPushButton("浏览...")
+        import_xls_btn.setObjectName("browseBtn")
         import_xls_btn.clicked.connect(self._browse_import_xls)
         file_layout.addWidget(import_xls_btn)
         layout.addWidget(file_group)
@@ -173,8 +484,8 @@ class MainWindow(QMainWindow):
         # Action
         btn_layout = QHBoxLayout()
         self._import_btn = QPushButton("导入员工信息到数据库")
+        self._import_btn.setObjectName("primaryBtn")
         self._import_btn.setMinimumHeight(40)
-        self._import_btn.setStyleSheet("QPushButton { font-size: 14px; font-weight: bold; }")
         self._import_btn.clicked.connect(self._on_import)
         btn_layout.addWidget(self._import_btn, 1)
         layout.addLayout(btn_layout)
@@ -205,6 +516,7 @@ class MainWindow(QMainWindow):
         tmpl_layout.addLayout(month_row)
 
         gen_btn = QPushButton("生成空白考勤模板")
+        gen_btn.setObjectName("primaryBtn")
         gen_btn.setMinimumHeight(35)
         gen_btn.clicked.connect(self._on_generate_template)
         tmpl_layout.addWidget(gen_btn)
@@ -232,6 +544,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(QLabel("数据库中所有员工信息"))
         bar.addStretch()
         refresh_btn = QPushButton("刷新")
+        refresh_btn.setObjectName("primaryBtn")
         refresh_btn.clicked.connect(self._on_refresh_employees)
         bar.addWidget(refresh_btn)
         layout.addLayout(bar)
