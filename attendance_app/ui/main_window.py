@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -48,6 +49,10 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._load_settings()
+        # Default the import database path to output/
+        out_dir = self._get_db_dir()
+        if not self._import_out_edit.text():
+            self._import_out_edit.setText(out_dir)
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -397,14 +402,9 @@ class MainWindow(QMainWindow):
 
     def _on_refresh_employees(self) -> None:
         """Load employees from the database and display in the table."""
-        out_dir = self._import_out_edit.text().strip()
-        if not out_dir:
-            self._emp_table.setRowCount(0)
-            return
-
         try:
             from wrappers.db_handler import DatabaseHandler
-            db = DatabaseHandler(out_dir)
+            db = DatabaseHandler(self._get_db_dir())
             employees = db.get_all_employees()
         except Exception:
             self._emp_table.setRowCount(0)
@@ -427,12 +427,9 @@ class MainWindow(QMainWindow):
 
     def _on_position_changed(self, employee_number: str, position: str) -> None:
         """Save position change to the database."""
-        out_dir = self._import_out_edit.text().strip()
-        if not out_dir:
-            return
         try:
             from wrappers.db_handler import DatabaseHandler
-            db = DatabaseHandler(out_dir)
+            db = DatabaseHandler(self._get_db_dir())
             db.update_employee_position(employee_number, position)
         except Exception:
             pass
@@ -472,6 +469,17 @@ class MainWindow(QMainWindow):
         self._import_progress.setVisible(busy)
         self._process_btn.setEnabled(not busy)
         self._import_btn.setEnabled(not busy)
+
+    @staticmethod
+    def _get_db_dir() -> str:
+        """Return the path to the output/ folder used for database storage."""
+        if getattr(sys, 'frozen', False):
+            root = Path(sys.executable).parent.parent
+        else:
+            root = Path(__file__).parent.parent
+        db_dir = root / "output"
+        db_dir.mkdir(exist_ok=True)
+        return str(db_dir)
 
     # =========================================================================
     # Settings
