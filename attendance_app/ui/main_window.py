@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -22,7 +23,6 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("考勤自动化处理工具")
         self.setMinimumSize(700, 600)
+        self.setWindowIcon(QIcon(str(Path(__file__).parent / "app_icon.png")))
 
         self._manager = AttendanceManager()
         self._manager.progress.connect(self._on_progress)
@@ -49,10 +50,6 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._load_settings()
-        # Default the import database path to output/
-        out_dir = self._get_db_dir()
-        if not self._import_out_edit.text():
-            self._import_out_edit.setText(out_dir)
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -65,7 +62,13 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_attendance_tab(), "考勤处理")
         tabs.addTab(self._build_import_tab(), "员工信息导入")
         tabs.addTab(self._build_employee_tab(), "员工数据")
+        tabs.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(tabs)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Auto-load employee data when switching to the employee tab."""
+        if index == 2:
+            self._on_refresh_employees()
 
     # =========================================================================
     # Tab 1: Attendance Processing
@@ -132,15 +135,6 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(False)
         layout.addWidget(self._progress_bar)
 
-        # Log
-        log_group = QGroupBox("处理日志")
-        log_layout = QVBoxLayout(log_group)
-        self._log = QTextEdit()
-        self._log.setReadOnly(True)
-        self._log.setMaximumHeight(150)
-        log_layout.addWidget(self._log)
-        layout.addWidget(log_group)
-
         return w
 
     # =========================================================================
@@ -166,22 +160,10 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(import_xls_btn)
         layout.addWidget(file_group)
 
-        # Output dir (DB location)
-        out_group = QGroupBox("数据库位置")
-        out_layout = QHBoxLayout(out_group)
-        self._import_out_edit = QLineEdit()
-        self._import_out_edit.setPlaceholderText("选择数据库保存目录...")
-        self._import_out_edit.setReadOnly(True)
-        out_layout.addWidget(self._import_out_edit, 1)
-        import_out_btn = QPushButton("浏览...")
-        import_out_btn.clicked.connect(self._browse_import_output)
-        out_layout.addWidget(import_out_btn)
-        layout.addWidget(out_group)
-
         # Info
         info_label = QLabel(
             "将从考勤报表的\"员工排班表\"中提取：员工号、姓名、考勤地区（岗位），"
-            "写入 attendance.db 数据库的 employees 表中。\n"
+            "写入 attendance.db 数据库中。\n"
             "已存在的员工号会自动更新姓名和岗位信息。"
         )
         info_label.setWordWrap(True)
@@ -234,15 +216,6 @@ class MainWindow(QMainWindow):
         self._import_progress.setVisible(False)
         layout.addWidget(self._import_progress)
 
-        # Log
-        log_group = QGroupBox("导入日志")
-        log_layout = QVBoxLayout(log_group)
-        self._import_log = QTextEdit()
-        self._import_log.setReadOnly(True)
-        self._import_log.setMaximumHeight(150)
-        log_layout.addWidget(self._import_log)
-        layout.addWidget(log_group)
-
         return w
 
     # =========================================================================
@@ -270,6 +243,7 @@ class MainWindow(QMainWindow):
         self._emp_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._emp_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._emp_table.setAlternatingRowColors(True)
+        self._emp_table.verticalHeader().setVisible(False)
         layout.addWidget(self._emp_table)
 
         return w
@@ -312,7 +286,6 @@ class MainWindow(QMainWindow):
             out_dir = str(Path(xlsx_path).parent)
             self._out_edit.setText(out_dir)
 
-        self._log.clear()
         self._set_busy(True)
         self._save_settings()
         self._manager.process(xls_path, xlsx_path, out_dir)
@@ -344,28 +317,15 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "选择考勤报表", "", "Excel文件 (*.xls)")
         if path:
             self._import_xls_edit.setText(path)
-            if not self._import_out_edit.text():
-                self._import_out_edit.setText(str(Path(path).parent))
-
-    def _browse_import_output(self) -> None:
-        dir_path = QFileDialog.getExistingDirectory(self, "选择数据库保存目录")
-        if dir_path:
-            self._import_out_edit.setText(dir_path)
 
     def _on_import(self) -> None:
         xls_path = self._import_xls_edit.text().strip()
-        out_dir = self._import_out_edit.text().strip()
-
         if not xls_path:
             QMessageBox.warning(self, "提示", "请先选择考勤报表文件 (.xls)")
             return
-        if not out_dir:
-            out_dir = str(Path(xls_path).parent)
-            self._import_out_edit.setText(out_dir)
 
-        self._import_log.clear()
         self._set_busy(True)
-        self._manager.import_employees(xls_path, out_dir)
+        self._manager.import_employees(xls_path, self._get_db_dir())
 
     def _on_import_finished(self, inserted: int, updated: int, skipped: int) -> None:
         self._set_busy(False)
@@ -380,11 +340,6 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "导入完成", result)
 
     def _on_generate_template(self) -> None:
-        out_dir = self._import_out_edit.text().strip()
-        if not out_dir:
-            QMessageBox.warning(self, "提示", "请先选择数据库所在目录（数据库位置）")
-            return
-
         try:
             year = int(self._tmpl_year_edit.text().strip())
             month = int(self._tmpl_month_combo.currentText())
@@ -396,9 +351,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请输入合理的年份（2020-2100）")
             return
 
-        self._import_log.clear()
         self._set_busy(True)
-        self._manager.generate_template(out_dir, year, month)
+        self._manager.generate_template(self._get_db_dir(), year, month)
 
     def _on_refresh_employees(self) -> None:
         """Load employees from the database and display in the table."""
@@ -454,13 +408,10 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def _on_progress(self, message: str) -> None:
-        self._log.append(message)
-        self._import_log.append(message)
+        pass
 
     def _on_error(self, message: str) -> None:
         self._set_busy(False)
-        self._log.append(f"[错误] {message}")
-        self._import_log.append(f"[错误] {message}")
         QMessageBox.critical(self, "错误", message)
 
     def _set_busy(self, busy: bool) -> None:
@@ -472,12 +423,12 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _get_db_dir() -> str:
-        """Return the path to the output/ folder used for database storage."""
+        """Return the path to the database storage folder."""
         if getattr(sys, 'frozen', False):
             root = Path(sys.executable).parent.parent
         else:
             root = Path(__file__).parent.parent
-        db_dir = root / "output"
+        db_dir = root / "attendance_app" / "output"
         db_dir.mkdir(exist_ok=True)
         return str(db_dir)
 
@@ -505,4 +456,3 @@ class MainWindow(QMainWindow):
             self._xlsx_edit.setText(str(xlsx))
         if out:
             self._out_edit.setText(str(out))
-            self._import_out_edit.setText(str(out))
