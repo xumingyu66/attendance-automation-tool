@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Build output
+dist/
+*.spec
+
+# Generated data
+output/
+*.db
+
+# Data files
+*.xlsx
+*.xls
+*.zip
+*.docx
+
+# Temp
+新建文件夹/
