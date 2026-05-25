@@ -427,7 +427,7 @@ class MainWindow(QMainWindow):
         if getattr(sys, 'frozen', False):
             root = Path(sys.executable).parent.parent
         else:
-            root = Path(__file__).parent.parent
+            root = Path(__file__).parent.parent.parent
         db_dir = root / "attendance_app" / "output"
         db_dir.mkdir(exist_ok=True)
         return str(db_dir)
