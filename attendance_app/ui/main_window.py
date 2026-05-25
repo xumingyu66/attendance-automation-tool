@@ -259,8 +259,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(bar)
 
         self._emp_table = QTableWidget()
-        self._emp_table.setColumnCount(3)
-        self._emp_table.setHorizontalHeaderLabels(["工号", "姓名", "岗位"])
+        self._emp_table.setColumnCount(4)
+        self._emp_table.setHorizontalHeaderLabels(["工号", "姓名", "岗位", "值班岗位"])
         self._emp_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._emp_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._emp_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -415,6 +415,27 @@ class MainWindow(QMainWindow):
             self._emp_table.setItem(i, 0, QTableWidgetItem(emp.employee_number))
             self._emp_table.setItem(i, 1, QTableWidgetItem(emp.name))
             self._emp_table.setItem(i, 2, QTableWidgetItem(emp.department))
+
+            # Position selector (值班岗 / 整架岗)
+            combo = QComboBox()
+            combo.addItems(["值班岗", "整架岗"])
+            combo.setCurrentText(emp.position)
+            combo.currentTextChanged.connect(
+                lambda text, num=emp.employee_number: self._on_position_changed(num, text)
+            )
+            self._emp_table.setCellWidget(i, 3, combo)
+
+    def _on_position_changed(self, employee_number: str, position: str) -> None:
+        """Save position change to the database."""
+        out_dir = self._import_out_edit.text().strip()
+        if not out_dir:
+            return
+        try:
+            from wrappers.db_handler import DatabaseHandler
+            db = DatabaseHandler(out_dir)
+            db.update_employee_position(employee_number, position)
+        except Exception:
+            pass
 
     def _on_template_generated(self, output_path: str) -> None:
         self._set_busy(False)

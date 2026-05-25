@@ -16,6 +16,7 @@ class Employee:
     employee_number: str
     name: str
     department: str
+    position: str = "值班岗"
 
 
 class DatabaseHandler:
@@ -34,14 +35,21 @@ class DatabaseHandler:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     employee_number VARCHAR(20) NOT NULL UNIQUE,
                     name VARCHAR(50) NOT NULL,
-                    department VARCHAR(100)
+                    department VARCHAR(100),
+                    position VARCHAR(10) DEFAULT '值班岗'
                 )
             """)
+            # Migration: add position column for existing databases
+            cursor = conn.execute("PRAGMA table_info(employees)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'position' not in columns:
+                conn.execute("ALTER TABLE employees ADD COLUMN position VARCHAR(10) DEFAULT '值班岗'")
             conn.commit()
 
     def upsert_employees(self, employees: list[Employee]) -> tuple[int, int, int]:
         """Insert or update employee records.
 
+        Position is only set on insert (not updated) since it's manually configured.
         Returns:
             (inserted, updated, skipped) counts.
         """
@@ -58,8 +66,8 @@ class DatabaseHandler:
 
                 if existing is None:
                     conn.execute(
-                        "INSERT INTO employees (employee_number, name, department) VALUES (?, ?, ?)",
-                        (emp.employee_number, emp.name, emp.department),
+                        "INSERT INTO employees (employee_number, name, department, position) VALUES (?, ?, ?, ?)",
+                        (emp.employee_number, emp.name, emp.department, emp.position),
                     )
                     inserted += 1
                 else:
@@ -80,12 +88,21 @@ class DatabaseHandler:
         """Return all employees from the database."""
         with self._get_conn() as conn:
             rows = conn.execute(
-                "SELECT employee_number, name, department FROM employees ORDER BY CAST(employee_number AS INTEGER)"
+                "SELECT employee_number, name, department, position FROM employees ORDER BY CAST(employee_number AS INTEGER)"
             ).fetchall()
             return [
-                Employee(employee_number=row[0], name=row[1], department=row[2] or "")
+                Employee(employee_number=row[0], name=row[1], department=row[2] or "", position=row[3] or "值班岗")
                 for row in rows
             ]
+
+    def update_employee_position(self, employee_number: str, position: str) -> None:
+        """Update the position for a specific employee."""
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE employees SET position = ? WHERE employee_number = ?",
+                (position, employee_number),
+            )
+            conn.commit()
 
     def get_employee_count(self) -> int:
         with self._get_conn() as conn:
